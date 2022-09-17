@@ -11,12 +11,14 @@ steamlaunchy <path/to/exe>
 ## Environment Variables
 
 ```
-STEAMLAUNCHY_CONF                  Override Steamlaunchy config. A config file is optional
-STEAMLAUNCHY_DEBUG                 Set to '1' to increase logging
-STEAMLAUNCHY_STEAM_HOME            Override default Steam installation dir
-STEAMLAUNCHY_PROTON_PATH           Override Proton versions available to Steamlaunchy. By default it searches the Steam installation dir. Comma delimited string of proton dir paths
-STEAMLAUNCHY_PROTON_VERSION        Override default Proton version. By default the lastest stable Proton version is selected
-STEAMLAUNCHY_PROTON_BIN            Override absolute path to Proton executable
-STEAMLAUNCHY_PROTON_BIN_NAME       Override Proton executable basename
-STEAMLAUNCHY_INCLUDE_EXPERIMENTAL  Set to `1` to include non-semantic Proton versions in Proton version selection
+# STEAMLAUNCHY_CONFIG_HOME           Defaults to '~/.config/steamlaunchy'
+# STEAMLAUNCHY_DATA_HOME             Defaults to '~/.local/share/steamlaunchy'
+# STEAMLAUNCHY_CONF                  Override Steamlaunchy config. A config file is optional
+# STEAMLAUNCHY_DEBUG                 Set to '1' to increase logging
+# STEAMLAUNCHY_PROTON_PATH           Override Proton versions available to Steamlaunchy. By default it searches the Steam installation dir. Comma delimited string of proton dir paths
+# STEAMLAUNCHY_PROTON_VERSION        Override default Proton version. By default the lastest stable Proton version is selected
+# STEAMLAUNCHY_PROTON_BIN            Override absolute path to Proton executable
+# STEAMLAUNCHY_PROTON_BIN_NAME       Override Proton executable basename
+# STEAMLAUNCHY_INCLUDE_EXPERIMENTAL  Set to `1` to include non-semantic Proton versions in Proton version selection
+# STEAMLAUNCHY_APPLICATION_PREFIX    Override the application prefix in STEAMLAUNCHY_DATA_HOME
 ```

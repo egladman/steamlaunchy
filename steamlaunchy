@@ -3,26 +3,31 @@
 set -o pipefail -o errexit
 
 # Steamlaunchy
-# A tiny wrapper to programmatically launch third-party windows applications from within Steam
+# A tiny wrapper to programmatically launch non-steam games (that are also available on Steam) from within Steam
 
 # Usage: steamlaunchy <path/to/exe>
 
+# STEAMLAUNCHY_CONFIG_HOME           Defaults to '~/.config/steamlaunchy'
+# STEAMLAUNCHY_DATA_HOME             Defaults to '~/.local/share/steamlaunchy'
 # STEAMLAUNCHY_CONF                  Override Steamlaunchy config. A config file is optional
 # STEAMLAUNCHY_DEBUG                 Set to '1' to increase logging
-# STEAMLAUNCHY_STEAM_HOME            Override default Steam installation dir
 # STEAMLAUNCHY_PROTON_PATH           Override Proton versions available to Steamlaunchy. By default it searches the Steam installation dir. Comma delimited string of proton dir paths
 # STEAMLAUNCHY_PROTON_VERSION        Override default Proton version. By default the lastest stable Proton version is selected
 # STEAMLAUNCHY_PROTON_BIN            Override absolute path to Proton executable
 # STEAMLAUNCHY_PROTON_BIN_NAME       Override Proton executable basename
 # STEAMLAUNCHY_INCLUDE_EXPERIMENTAL  Set to `1` to include non-semantic Proton versions in Proton version selection
+# STEAMLAUNCHY_APPLICATION_PREFIX    Override the application prefix in STEAMLAUNCHY_DATA_HOME
 
-STEAMLAUNCHY_CONF="${STEAMLAUNCHY_CONF:-${XDG_CONFIG_HOME:-$HOME/.config}/steamlaunchy/settings.conf}"
+STEAMLAUNCHY_CONFIG_HOME="${STEAMLAUNCHY_CONFIG_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/steamlaunchy}"
+STEAMLAUNCHY_DATA_HOME="${STEAMLAUNCHY_DATA_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/steamlaunchy}"
+
+STEAMLAUNCHY_CONF="${STEAMLAUNCHY_CONF:-${STEAMLAUNCHY_CONFIG_HOME}/launchy.env}"
 [[ -f "$STEAMLAUNCHY_CONF" ]] && source "$STEAMLAUNCHY_CONF"
 
 STEAMLAUNCHY_DEBUG="${STEAMLAUNCHY_DEBUG:-0}"
 STEAMLAUNCHY_INCLUDE_EXPERIMENTAL="${STEAMLAUNCHY_INCLUDE_EXPERIMENTAL:-0}"
-STEAMLAUNCHY_STEAM_HOME="${STEAMLAUNCHY_STEAM_HOME:-$HOME/.steam}"
 STEAMLAUNCHY_PROTON_BIN_NAME="${STEAMLAUNCHY_PROTON_BIN_NAME:-proton}"
+STEAMLAUNCHY_STEAM_HOME="${STEAM_COMPAT_CLIENT_INSTALL_PATH:-$HOME/.steam/steam}"
 
 readonly STEAMLAUNCHY_REGEX_IS_PROTON_STABLE='.*/Proton [0-9]+.[0-9]+(.[0-9]+)?$'
 readonly STEAMLAUNCHY_REGEX_IS_PROTON_EXPERIMENTAL='.*/Proton.*Experimental$'
@@ -85,7 +90,7 @@ proton::set_path() {
         return 0
     fi
 
-    for f in "${STEAMLAUNCHY_STEAM_HOME}/steam/steamapps/common/"*; do
+    for f in "${STEAMLAUNCHY_STEAM_HOME}/steamapps/common/"*; do
         # Ignore any file that's not a directory
         [[ -d "$f" ]] || continue
 
@@ -163,13 +168,35 @@ proton::run() {
     fi
 
     log::info "Launching $1"
-    log::debug "Calling executable '${STEAMLAUNCHY_PROTON_BIN}' with arguments '${*}"
+    log::debug "Calling executable '${STEAMLAUNCHY_PROTON_BIN}' with arguments '${*}'"
 
     # Run proton. Replace the current process
+    STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAMLAUNCHY_STEAM_HOME" \
+    STEAM_COMPAT_DATA_PATH="$STEAMLAUNCHY_APPLICATION_PREFIX" \
     exec "$STEAMLAUNCHY_PROTON_BIN" run "$@"
 }
 
+launchy::setup() {
+    STEAMLAUNCHY_APPLICATION_PREFIX="${STEAMLAUNCHY_DATA_HOME}$(readlink --canonicalize-missing "${STEAMLAUNCHY_APPLICATION_PREFIX:-$1}")"
+
+    if [[ ! -d  "${STEAMLAUNCHY_CONFIG_HOME}" ]]; then
+        log::info "Creating directory '${STEAMLAUNCHY_CONFIG_HOME}'"
+        mkdir --parent "${STEAMLAUNCHY_CONFIG_HOME}"
+    fi
+
+    if [[ ! -d  "${STEAMLAUNCHY_DATA_HOME}" ]]; then
+        log::info "Creating directory '${STEAMLAUNCHY_DATA_HOME}'"
+        mkdir --parent "${STEAMLAUNCHY_DATA_HOME}"
+    fi
+
+    if [[ ! -d  "$STEAMLAUNCHY_APPLICATION_PREFIX" ]]; then
+        mkdir --parent "$STEAMLAUNCHY_APPLICATION_PREFIX"
+    fi
+}
+
 main() {
+    launchy::setup "$1"
+
     proton::set_path
     proton::set_version
     proton::set_bin
