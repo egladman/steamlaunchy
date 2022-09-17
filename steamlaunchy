@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+
+set -o pipefail -o errexit
+
+# Steamlaunchy
+# A tiny wrapper to programmatically launch third-party windows applications from within Steam
+
+# Usage: steamlaunchy <path/to/exe>
+
+# STEAMLAUNCHY_CONF                  Override Steamlaunchy config. A config file is optional
+# STEAMLAUNCHY_DEBUG                 Set to '1' to increase logging
+# STEAMLAUNCHY_STEAM_HOME            Override default Steam installation dir
+# STEAMLAUNCHY_PROTON_PATH           Override Proton versions available to Steamlaunchy. By default it searches the Steam installation dir. Comma delimited string of proton dir paths
+# STEAMLAUNCHY_PROTON_VERSION        Override default Proton version. By default the lastest stable Proton version is selected
+# STEAMLAUNCHY_PROTON_BIN            Override absolute path to Proton executable
+# STEAMLAUNCHY_PROTON_BIN_NAME       Override Proton executable basename
+# STEAMLAUNCHY_INCLUDE_EXPERIMENTAL  Set to `1` to include non-semantic Proton versions in Proton version selection
+
+STEAMLAUNCHY_CONF="${STEAMLAUNCHY_CONF:-${XDG_CONFIG_HOME:-$HOME/.config}/steamlaunchy/settings.conf}"
+[[ -f "$STEAMLAUNCHY_CONF" ]] && source "$STEAMLAUNCHY_CONF"
+
+STEAMLAUNCHY_DEBUG="${STEAMLAUNCHY_DEBUG:-0}"
+STEAMLAUNCHY_INCLUDE_EXPERIMENTAL="${STEAMLAUNCHY_INCLUDE_EXPERIMENTAL:-0}"
+STEAMLAUNCHY_STEAM_HOME="${STEAMLAUNCHY_STEAM_HOME:-$HOME/.steam}"
+STEAMLAUNCHY_PROTON_BIN_NAME="${STEAMLAUNCHY_PROTON_BIN_NAME:-proton}"
+
+readonly STEAMLAUNCHY_REGEX_IS_PROTON_STABLE='.*/Proton [0-9]+.[0-9]+(.[0-9]+)?$'
+readonly STEAMLAUNCHY_REGEX_IS_PROTON_EXPERIMENTAL='.*/Proton.*Experimental$'
+
+log::println() {
+    # Usage: log::println "prefix" "string"
+
+    printf -v now '%(%m-%d-%Y %H:%M:%S)T' -1
+    printf '%b\n' "[${1:: 4}] ${now} ${0##*/} ${2}"
+}
+
+log::warn() {
+    # Usage: log::warn "string"
+
+    log::println "WARN" "$*"
+}
+
+log::debug() {
+    # Usage: log::debug "string"
+
+    [[ $STEAMLAUNCHY_DEBUG -eq 1 ]] && log::println "DEBUG" "$*"
+}
+
+log::info() {
+    # Usage: log::info "string"
+
+    log::println "INFO" "$*"
+}
+
+log::error() {
+    log::println "ERROR" "$*"
+}
+
+# https://github.com/dylanaraps/pure-bash-bible#split-a-string-on-a-delimiter
+util::split() {
+    # Usage: util::split "string" "delimiter"
+
+    IFS=$'\n' read -d "" -ra arr <<< "${1//$2/$'\n'}"
+    printf '%s\n' "${arr[@]}"
+}
+
+# https://github.com/dylanaraps/pure-bash-bible#get-the-base-name-of-a-file-path
+util::basename() {
+    # Usage: util::basename "path" ["suffix"]
+
+    local tmp
+
+    tmp=${1%"${1##*[!/]}"}
+    tmp=${tmp##*/}
+    tmp=${tmp%"${2/"$tmp"}"}
+
+    printf '%s\n' "${tmp:-/}"
+}
+
+proton::set_path() {
+    # Usage: proton::set_path
+
+    if [[ -n "$STEAMLAUNCHY_PROTON_PATH" ]]; then
+        log::debug "Environment variable STEAMLAUNCHY_PROTON_PATH set to '${STEAMLAUNCHY_PROTON_PATH}'. Continuing..."
+        return 0
+    fi
+
+    for f in "${STEAMLAUNCHY_STEAM_HOME}/steam/steamapps/common/"*; do
+        # Ignore any file that's not a directory
+        [[ -d "$f" ]] || continue
+
+        if [[ "$f" =~ $STEAMLAUNCHY_REGEX_IS_PROTON_STABLE ]] || [[ "$f" =~ $STEAMLAUNCHY_REGEX_IS_PROTON_EXPERIMENTAL ]]; then
+            [[ -z "$1" ]] || set -- "${*}:"
+            set -- "${*}${f}"
+        fi
+    done
+
+    STEAMLAUNCHY_PROTON_PATH="$@"
+    log::debug "Environment variable STEAMLAUNCHY_PROTON_PATH set to '${STEAMLAUNCHY_PROTON_PATH}'"
+}
+
+proton::set_version() {
+    # Usage: proton::set_version
+
+    if [[ -n "$STEAMLAUNCHY_PROTON_VERSION" ]]; then
+        log::debug "Environment variable STEAMLAUNCHY_PROTON_VERSION set to '${STEAMLAUNCHY_PROTON_VERSION}'. Continuing..."
+        return 0
+    fi
+
+    declare -a arr arr_sorted
+    IFS=$'\n' arr=($(util::split "$STEAMLAUNCHY_PROTON_PATH" ":"))
+
+    [[ $STEAMLAUNCHY_INCLUDE_EXPERIMENTAL -eq 0 ]] && for i in "${!arr[@]}"; do
+        if [[ "${arr[$i]}" =~ $STEAMLAUNCHY_REGEX_IS_PROTON_EXPERIMENTAL ]]; then
+            unset arr[$i]
+        fi
+    done
+
+    arr_sorted=($(printf '%s ' "${arr[@]}" | sort --numeric-sort))
+
+    # Reuse array because i'm lazy
+    IFS=' ' arr=($(util::basename "${arr_sorted[0]}"))
+
+    STEAMLAUNCHY_PROTON_VERSION="${arr[-1]}"
+    log::warn "No proton version specified. Defaulting to proton ${STEAMLAUNCHY_PROTON_VERSION}"
+}
+
+proton::set_bin() {
+    # Usage::set_bin
+
+    if [[ -n "$STEAMLAUNCHY_PROTON_BIN" ]]; then
+        log::debug "Environment variable STEAMLAUNCHY_PROTON_BIN set to '${STEAMLAUNCHY_PROTON_BIN}'. Continuing..."
+        return 0
+    fi
+
+    declare -a arr
+    IFS=$'\n' arr=($(util::split "$STEAMLAUNCHY_PROTON_PATH" ":"))
+
+    # Find the proton bin associated with the proton version
+    for p in "${arr[@]}"; do
+        if [[ "$p" == *"$STEAMLAUNCHY_PROTON_VERSION" ]]; then
+            STEAMLAUNCHY_PROTON_BIN="${p}/${STEAMLAUNCHY_PROTON_BIN_NAME}"
+            log::debug "Found proton executable '${STEAMLAUNCHY_PROTON_BIN}'"
+            return 0
+        fi
+    done
+
+    if [[ ! -x "$STEAMLAUNCHY_PROTON_BIN" ]]; then
+        log::error "File '$STEAMLAUNCHY_PROTON_BIN' not executable."
+        return 126
+    fi
+
+    log::error "Unable to find proton executable for version '${STEAMLAUNCHY_PROTON_VERSION}'."
+    return 2
+}
+
+proton::run() {
+    # Usage: proton::run
+
+    if [[ -z "$1" ]]; then
+        log::error "No arguments specified."
+        return 128
+    fi
+
+    log::info "Launching $1"
+    log::debug "Calling executable '${STEAMLAUNCHY_PROTON_BIN}' with arguments '${*}"
+
+    # Run proton. Replace the current process
+    exec "$STEAMLAUNCHY_PROTON_BIN" run "$@"
+}
+
+main() {
+    proton::set_path
+    proton::set_version
+    proton::set_bin
+
+    proton::run "$@"
+}
+
+main "$@"
