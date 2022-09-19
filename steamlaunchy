@@ -3,7 +3,7 @@
 set -o pipefail -o errexit
 
 # Steamlaunchy
-# A tiny wrapper to programmatically launch non-steam games (that are also available on Steam) from within Steam
+# A tiny wrapper to programmatically launch third-party windows applications from within Steam
 
 # Usage: steamlaunchy <path/to/exe>
 
@@ -80,6 +80,31 @@ util::basename() {
     tmp=${tmp%"${2/"$tmp"}"}
 
     printf '%s\n' "${tmp:-/}"
+}
+
+util::new_random_dir() {
+    # Usage: util::new_random_dir "path/to/prefix"
+
+    # $RANDOM is an internal Bash function (not a constant) that returns a
+    # pseudorandom integer in the range 0 - 32767
+    local dirname
+    dirname="${RANDOM}${RANDOM}"
+
+    # Support overriding the dirname
+    [[ -n "$DESTDIR" ]] && dirname="$DESTDIR"
+
+    # Add '/' suffix
+    [[ -n "$1" ]] && set -- "${1}/"
+
+    # Handle collisions
+    while [[ -d "${1}${dirname}" ]] && [[ -z "$DESTDIR" ]]; do
+        util::new_random_dir "$@"
+    done
+
+    mkdir --parent "${1}${dirname}"
+
+    # Print final path
+    printf '%s' "${1}${dirname}"
 }
 
 proton::set_path() {
@@ -172,25 +197,23 @@ proton::run() {
 
     # Run proton. Replace the current process
     STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAMLAUNCHY_STEAM_HOME" \
-    STEAM_COMPAT_DATA_PATH="$STEAMLAUNCHY_APPLICATION_PREFIX" \
+    STEAM_COMPAT_DATA_PATH="$STEAMLAUNCHY_APPLICATION_HOME" \
     exec "$STEAMLAUNCHY_PROTON_BIN" run "$@"
 }
 
 launchy::setup() {
-    STEAMLAUNCHY_APPLICATION_PREFIX="${STEAMLAUNCHY_DATA_HOME}$(readlink --canonicalize-missing "${STEAMLAUNCHY_APPLICATION_PREFIX:-$1}")"
+    if [[ -n "$STEAMLAUNCHY_APPLICATION_PREFIX" ]]; then
+        DESTDIR="$STEAMLAUNCHY_APPLICATION_PREFIX"
+    fi
+
+    STEAMLAUNCHY_APPLICATION_HOME="$(util::new_random_dir "${STEAMLAUNCHY_DATA_HOME}")"
+    unset DESTDIR
+
+    log::info "Application directory '${STEAMLAUNCHY_APPLICATION_HOME}'"
 
     if [[ ! -d  "${STEAMLAUNCHY_CONFIG_HOME}" ]]; then
         log::info "Creating directory '${STEAMLAUNCHY_CONFIG_HOME}'"
         mkdir --parent "${STEAMLAUNCHY_CONFIG_HOME}"
-    fi
-
-    if [[ ! -d  "${STEAMLAUNCHY_DATA_HOME}" ]]; then
-        log::info "Creating directory '${STEAMLAUNCHY_DATA_HOME}'"
-        mkdir --parent "${STEAMLAUNCHY_DATA_HOME}"
-    fi
-
-    if [[ ! -d  "$STEAMLAUNCHY_APPLICATION_PREFIX" ]]; then
-        mkdir --parent "$STEAMLAUNCHY_APPLICATION_PREFIX"
     fi
 }
 
