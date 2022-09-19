@@ -193,11 +193,11 @@ proton::run() {
     fi
 
     log::info "Launching $1"
-    log::debug "Calling executable '${STEAMLAUNCHY_PROTON_BIN}' with arguments '${*}'"
+    log::debug "Executing '${STEAMLAUNCHY_PROTON_BIN}' with arguments '${*}'"
 
     # Run proton. Replace the current process
-    STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAMLAUNCHY_STEAM_HOME" \
-    STEAM_COMPAT_DATA_PATH="$STEAMLAUNCHY_APPLICATION_HOME" \
+    STEAM_COMPAT_CLIENT_INSTALL_PATH="${STEAM_COMPAT_CLIENT_INSTALL_PATH:-$STEAMLAUNCHY_STEAM_HOME}" \
+    STEAM_COMPAT_DATA_PATH="${STEAM_COMPAT_DATA_PATH:-STEAMLAUNCHY_APPLICATION_HOME}" \
     exec "$STEAMLAUNCHY_PROTON_BIN" run "$@"
 }
 
